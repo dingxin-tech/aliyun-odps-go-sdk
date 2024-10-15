@@ -68,9 +68,9 @@ type tableModel struct {
 	Type          TableType
 }
 
-func NewTable(odpsIns *Odps, projectName string, tableName string) Table {
+func NewTable(odpsIns *Odps, projectName string, schemaName string, tableName string) Table {
 	return Table{
-		model:   tableModel{ProjectName: projectName, Name: tableName},
+		model:   tableModel{ProjectName: projectName, SchemaName: schemaName, Name: tableName},
 		odpsIns: odpsIns,
 	}
 }
@@ -84,7 +84,12 @@ func (t *Table) Load() error {
 	resource := t.ResourceUrl()
 	t.beLoaded = true
 
-	err := client.GetWithModel(resource, nil, &t.model)
+	queryArgs := make(url.Values, 4)
+	if t.SchemaName() != "" {
+		queryArgs.Set("curr_schema", t.SchemaName())
+	}
+
+	err := client.GetWithModel(resource, queryArgs, &t.model)
 	if err != nil {
 		return errors.WithStack(err)
 	}
@@ -101,11 +106,14 @@ func (t *Table) LoadExtendedInfo() error {
 	client := t.odpsIns.restClient
 	resource := t.ResourceUrl()
 
-	urlQuery := make(url.Values)
-	urlQuery.Set("extended", "")
+	queryArgs := make(url.Values, 4)
+	queryArgs.Set("extended", "")
+	if t.SchemaName() != "" {
+		queryArgs.Set("curr_schema", t.SchemaName())
+	}
 
 	var model tableModel
-	err := client.GetWithModel(resource, urlQuery, &model)
+	err := client.GetWithModel(resource, queryArgs, &model)
 	if err != nil {
 		return errors.WithStack(err)
 	}
@@ -160,6 +168,10 @@ func (t *Table) CryptoAlgo() string {
 
 func (t *Table) ProjectName() string {
 	return t.model.ProjectName
+}
+
+func (t *Table) SchemaName() string {
+	return t.model.SchemaName
 }
 
 func (t *Table) Type() TableType {
@@ -354,7 +366,13 @@ func (t *Table) ExecSql(taskName, sql string) (*Instance, error) {
 // AddPartition Example: AddPartition(true, "region='10026, name='abc'")
 func (t *Table) AddPartition(ifNotExists bool, partitionKey string) error {
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("alter table %s.%s add", t.ProjectName(), t.Name()))
+	sb.WriteString("alter table ")
+	if t.SchemaName() == "" {
+		sb.WriteString(fmt.Sprintf("%s.%s", t.ProjectName(), t.Name()))
+	} else {
+		sb.WriteString(fmt.Sprintf("%s.%s.%s", t.ProjectName(), t.SchemaName(), t.Name()))
+	}
+	sb.WriteString(" add")
 	if ifNotExists {
 		sb.WriteString(" if not exists")
 	}
@@ -374,7 +392,13 @@ func (t *Table) AddPartition(ifNotExists bool, partitionKey string) error {
 // DeletePartition Example: DeletePartition(true, "region='10026, name='abc'")
 func (t *Table) DeletePartition(ifExists bool, partitionKey string) error {
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("alter table %s.%s drop", t.ProjectName(), t.Name()))
+	sb.WriteString("alter table ")
+	if t.SchemaName() == "" {
+		sb.WriteString(fmt.Sprintf("%s.%s", t.ProjectName(), t.Name()))
+	} else {
+		sb.WriteString(fmt.Sprintf("%s.%s.%s", t.ProjectName(), t.SchemaName(), t.Name()))
+	}
+	sb.WriteString(" drop")
 	if ifExists {
 		sb.WriteString(" if exists")
 	}
@@ -404,6 +428,9 @@ func (t *Table) GetPartitions(partitionKey string) ([]Partition, error) {
 
 	if partitionKey != "" {
 		queryArgs.Set("partition", partitionKey)
+	}
+	if t.SchemaName() != "" {
+		queryArgs.Set("curr_schema", t.SchemaName())
 	}
 
 	resource := t.ResourceUrl()
@@ -506,7 +533,12 @@ func (t *Table) GetPartitions(partitionKey string) ([]Partition, error) {
 
 func (t *Table) CreateShards(shardCount int) error {
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("alter table %s.%s", t.ProjectName(), t.Name()))
+	sb.WriteString("alter table ")
+	if t.SchemaName() == "" {
+		sb.WriteString(fmt.Sprintf("%s.%s", t.ProjectName(), t.Name()))
+	} else {
+		sb.WriteString(fmt.Sprintf("%s.%s.%s", t.ProjectName(), t.SchemaName(), t.Name()))
+	}
 	sb.WriteString(fmt.Sprintf("\ninto %d shards;", shardCount))
 	ins, err := t.ExecSql("SQLCreateShardsTask", sb.String())
 	if err != nil {

@@ -108,7 +108,7 @@ func ExampleTables_Create() {
 		Lifecycle(2)
 
 	schema := builder.Build()
-	sql, _ := schema.ToSQLString(defaultProjectName, false)
+	sql, _ := schema.ToSQLString(defaultProjectName, "", false)
 	println(sql)
 
 	tables := odps.NewTables(odpsIns)
