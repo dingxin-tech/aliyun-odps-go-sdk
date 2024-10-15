@@ -32,8 +32,7 @@ import (
 type TableType int
 
 const (
-	_ TableType = iota
-	ManagedTable
+	ManagedTable TableType = iota
 	VirtualView
 	ExternalTable
 	TableTypeUnknown
@@ -54,17 +53,19 @@ type TableOrErr struct {
 }
 
 type tableModel struct {
-	XMLName     xml.Name `xml:"Table"`
-	Name        string
-	TableId     string
-	Format      string
-	Schema      string
-	Comment     string
-	Owner       string
-	ProjectName string `xml:"Project"`
-	TableLabel  string
-	CryptoAlgo  string
-	Type        TableType
+	XMLName       xml.Name `xml:"Table"`
+	Name          string
+	TableId       string
+	Format        string
+	Schema        string
+	Comment       string
+	Owner         string
+	ProjectName   string `xml:"Project"`
+	SchemaName    string
+	TableLabel    string
+	CryptoAlgo    string
+	TableMaskInfo string
+	Type          TableType
 }
 
 func NewTable(odpsIns *Odps, projectName string, tableName string) Table {
@@ -134,10 +135,18 @@ func (t *Table) ResourceUrl() string {
 }
 
 func (t *Table) Comment() string {
+	// both model.Comment and tableSchema.Comment can get the value, the latter takes precedence
+	if t.tableSchema.Comment != "" {
+		return t.tableSchema.Comment
+	}
 	return t.model.Comment
 }
 
 func (t *Table) Owner() string {
+	// both model.Owner and tableSchema.Owner can get the value, the latter takes precedence
+	if t.tableSchema.Owner != "" {
+		return t.tableSchema.Owner
+	}
 	return t.model.Owner
 }
 
@@ -162,6 +171,10 @@ func (t *Table) CreatedTime() time.Time {
 }
 
 func (t *Table) TableLabel() string {
+	// Service will return 0 if nothing set
+	if t.tableSchema.TableLabel == "0" {
+		return ""
+	}
 	return t.tableSchema.TableLabel
 }
 
@@ -259,12 +272,16 @@ func calculateMaxLabel(labels []string) string {
 	return fmt.Sprintf("%s%d", category, maxLevel)
 }
 
-func (t *Table) LastDDLTime() time.Time {
+func (t *Table) LastDataModifiedTime() time.Time {
+	return time.Time(t.tableSchema.LastModifiedTime)
+}
+
+func (t *Table) LastMetaModifiedTime() time.Time {
 	return time.Time(t.tableSchema.LastDDLTime)
 }
 
-func (t *Table) LastModifiedTime() time.Time {
-	return time.Time(t.tableSchema.LastModifiedTime)
+func (t *Table) LastLastDataAccessTime() time.Time {
+	return time.Time(t.tableSchema.LastAccessTime)
 }
 
 func (t *Table) isVirtualView() bool {
@@ -279,7 +296,7 @@ func (t *Table) ViewText() string {
 	return t.tableSchema.ViewText
 }
 
-func (t *Table) Size() int {
+func (t *Table) Size() int64 {
 	return t.tableSchema.Size
 }
 
