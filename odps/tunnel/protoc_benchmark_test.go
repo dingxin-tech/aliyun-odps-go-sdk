@@ -3,10 +3,31 @@ package tunnel_test
 import (
 	"bytes"
 	"io"
+	"sync"
 	"testing"
 
 	"google.golang.org/protobuf/encoding/protowire"
 )
+
+// BenchmarkWriteBytes
+// BenchmarkWriteBytes/Old_Small
+// BenchmarkWriteBytes/Old_Small-8         	15771470	        72.60 ns/op	     112 B/op	       4 allocs/op
+// BenchmarkWriteBytes/New_Small
+// BenchmarkWriteBytes/New_Small-8         	58773110	        19.97 ns/op	       8 B/op	       1 allocs/op
+// BenchmarkWriteBytes/New2_Small
+// BenchmarkWriteBytes/New2_Small-8        	36471883	        32.51 ns/op	      24 B/op	       1 allocs/op
+// BenchmarkWriteBytes/Old_1KB
+// BenchmarkWriteBytes/Old_1KB-8           	16531686	        70.70 ns/op	     112 B/op	       4 allocs/op
+// BenchmarkWriteBytes/New_1KB
+// BenchmarkWriteBytes/New_1KB-8           	58092157	        19.92 ns/op	       8 B/op	       1 allocs/op
+// BenchmarkWriteBytes/New2_1KB
+// BenchmarkWriteBytes/New2_1KB-8          	35389356	        32.52 ns/op	      24 B/op	       1 allocs/op
+// BenchmarkWriteBytes/Old_1KB#01
+// BenchmarkWriteBytes/Old_1KB#01-8        	16017529	        72.76 ns/op	     112 B/op	       4 allocs/op
+// BenchmarkWriteBytes/New_1KB#01
+// BenchmarkWriteBytes/New_1KB#01-8        	57669663	        20.17 ns/op	       8 B/op	       1 allocs/op
+// BenchmarkWriteBytes/New2_1KB#01
+// BenchmarkWriteBytes/New2_1KB#01-8       	36332670	        32.85 ns/op	      24 B/op	       1 allocs/op
 
 // 旧版本实现（用于对比）
 type OldProtocStreamWriter struct {
@@ -82,6 +103,49 @@ func writeFull(w io.Writer, data []byte) error {
 		data = data[n:]
 	}
 	return nil
+}
+
+var bufPool = &sync.Pool{
+	New: func() interface{} {
+		return make([]byte, 0, 10)
+	},
+}
+
+// 新版本实现
+type NewProtocStreamWriter2 struct {
+	inner io.Writer
+}
+
+func (r *NewProtocStreamWriter2) WriteVarint(v uint64) error {
+	b := bufPool.Get().([]byte)
+	b = protowire.AppendVarint(b, v)
+	err := writeFull(r.inner, b)
+	bufPool.Put(b[:0])
+	return err
+}
+
+func (r *NewProtocStreamWriter2) WriteFixed32(val uint32) error {
+	b := bufPool.Get().([]byte)
+	b = protowire.AppendFixed32(b, val)
+	err := writeFull(r.inner, b)
+	bufPool.Put(b[:0])
+	return err
+}
+
+func (r *NewProtocStreamWriter2) WriteFixed64(val uint64) error {
+	b := bufPool.Get().([]byte)
+	b = protowire.AppendFixed64(b, val)
+	err := writeFull(r.inner, b)
+	bufPool.Put(b[:0])
+	return err
+}
+
+func (r *NewProtocStreamWriter2) WriteBytes(data []byte) error {
+	if err := r.WriteVarint(uint64(len(data))); err != nil {
+		return err
+	}
+	err := writeFull(r.inner, data)
+	return err
 }
 
 // | 测试用例             | 旧实现 (ns/op)  | 新实现 (ns/op)  | 时间提升   | 旧内存 (B/op)  | 新内存 (B/op)  | 内存优化  | 旧分配次数   | 新分配次数   | 分配优化 |
@@ -209,6 +273,17 @@ func BenchmarkWriteBytes(b *testing.B) {
 
 		b.Run("New_"+name, func(b *testing.B) {
 			newWriter := &NewProtocStreamWriter{inner: io.Discard}
+			b.ReportAllocs()
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				if err := newWriter.WriteBytes(data); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+
+		b.Run("New2_"+name, func(b *testing.B) {
+			newWriter := &NewProtocStreamWriter2{inner: io.Discard}
 			b.ReportAllocs()
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
