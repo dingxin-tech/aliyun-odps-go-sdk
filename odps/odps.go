@@ -178,3 +178,33 @@ func (odps *Odps) ExecSQlWithOption(sql string, option *options.SQLTaskOptions) 
 	i, err := instances.CreateTask(odps.defaultProject, &task, option.InstanceOption)
 	return i, errors.WithStack(err)
 }
+
+// SQLCost is the result of a cost-only ODPS SQL submission.
+// Fields mirror the JSON shape returned by the MaxCompute REST API when
+// `cost=true` is added to the instances submission.
+type SQLCost struct {
+	// InputBytes is the estimated total size of input data scanned (bytes).
+	InputBytes int64 `json:"input_bytes"`
+	// OutputBytes is the estimated total size of output data (bytes).
+	OutputBytes int64 `json:"output_bytes"`
+	// UDF count for the SQL.
+	UDFs int64 `json:"udfs"`
+	// Complexity is the planner's complexity estimate (dimensionless).
+	Complexity float64 `json:"complexity"`
+}
+
+// EstimateSQLCost performs a cost-only submission of the given SQL and
+// returns the planner's estimate without scheduling actual execution.
+//
+// Status: PLACEHOLDER. Real implementation requires:
+//   1. POST /projects/{project}/instances?curr_project={project}&cost=true with
+//      a SQLTask XML body identical to ExecSQl's, but with the cost flag.
+//   2. Parsing the response — server returns JSON cost summary inline rather
+//      than scheduling an instance for WaitForSuccess.
+//   3. Mapping fields (InputBytes/OutputBytes/UDFs/Complexity) from the JSON.
+//
+// See: PyODPS instance.cost() at python-odps for a reference implementation.
+// Tracking issue: TBD on creation of MR.
+func (odps *Odps) EstimateSQLCost(sql string, hints map[string]string) (*SQLCost, error) {
+	return nil, errors.New("EstimateSQLCost: not yet implemented (placeholder for maxc-cli integration)")
+}
